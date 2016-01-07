@@ -114,6 +114,13 @@ addConstants('h5t', {
 }, addH5t)
 local function addG(x) return addH5t(x) .. "_g" end
 
+local function addCset(x) return "H5T_CSET_" .. x end
+addConstants('h5t', {
+    'ERROR',
+    'ASCII',
+    'UTF8',
+}, addCset)
+
 addConstants('h5t', {
     'IEEE_F32BE',
     'IEEE_F32LE',
@@ -330,7 +337,6 @@ function hdf5._getTorchType(typeID)
             return 'torch.DoubleTensor'
         end
         error("Cannot support reading float data with size = " .. size .. " bytes")
-
     else
         error("Reading data of class " .. tostring(className) .. "(" .. typeID .. ") is unsupported")
     end

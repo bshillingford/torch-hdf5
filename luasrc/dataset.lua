@@ -59,24 +59,49 @@ function HDF5DataSet:__tostring()
 end
 
 function HDF5DataSet:all()
+    local typeID = hdf5.C.H5Dget_type(self._datasetID)
+    local className = hdf5._datatypeName(typeID)
+    local result
 
-    -- Create a new tensor of the correct type and size
-    local nDims = hdf5.C.H5Sget_simple_extent_ndims(self._dataspaceID)
-    local size = getDataspaceSize(nDims, self._dataspaceID)
-    local factory, nativeType = self:getTensorFactory()
+    if className == 'STRING' then
+        -- Allocate buffer to hold the pointer, and get type
+        local buf = hdf5.ffi.new('char*[1]')
+        local nDims = hdf5.C.H5Sget_simple_extent_ndims(self._dataspaceID)
+        if nDims ~= 0 then
+            error('Only zero-dim strings (not arrays) supported, found dim '..tostring(nDims))
+        end
+        local nativeType = hdf5.C.H5Tget_native_type(typeID, hdf5.C.H5T_DIR_ASCEND)
 
-    local tensor = factory():resize(unpack(size))
+        -- Read the string pointer
+        local status = hdf5.C.H5Dread(self._datasetID, nativeType, hdf5.H5S_ALL, hdf5.H5S_ALL, hdf5.H5P_DEFAULT, buf)
+        result = hdf5.ffi.string(buf[0])
 
-    -- Read data into the tensor
-    local dataPtr = tensor:data()
-    local status = hdf5.C.H5Dread(self._datasetID, nativeType, hdf5.H5S_ALL, hdf5.H5S_ALL, hdf5.H5P_DEFAULT, dataPtr)
+        hdf5.C.H5Dvlen_reclaim(typeID, self._dataspaceID, hdf5.H5P_DEFAULT, buf)
+        hdf5.C.H5Tclose(nativeType)
+    else
+        -- Note: if it's not a string, either a tensor or soemthing we can't handle
 
-    if status < 0 then
-        error("HDF5DataSet:all() - failed reading data from " .. tostring(self))
+        -- Create a new tensor of the correct type and size
+        local nDims = hdf5.C.H5Sget_simple_extent_ndims(self._dataspaceID)
+        local size = getDataspaceSize(nDims, self._dataspaceID)
+        local factory, nativeType = self:getTensorFactory()
+
+        local tensor = factory()
+        tensor:resize(unpack(size))
+
+        -- Read data into the tensor
+        local dataPtr = tensor:data()
+        local status = hdf5.C.H5Dread(self._datasetID, nativeType, hdf5.H5S_ALL, hdf5.H5S_ALL, hdf5.H5P_DEFAULT, dataPtr)
+        hdf5.C.H5Tclose(nativeType)
+
+        if status < 0 then
+            error("HDF5DataSet:all() - failed reading data from " .. tostring(self))
+        end
+        result = tensor
     end
-    hdf5.C.H5Tclose(nativeType)
 
-    return tensor
+    hdf5.C.H5Tclose(typeID)
+    return result
 end
 
 function HDF5DataSet:getTensorFactory()
